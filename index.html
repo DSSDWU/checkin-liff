@@ -1,0 +1,140 @@
+<!-- index.html สำหรับ GitHub Pages + LIFF SDK -->
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>เช็คอินกิจกรรมผ่าน LINE</title>
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <style>
+    body {
+      font-family: sans-serif;
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      color: #333;
+      padding: 20px;
+    }
+    .container {
+      background: white;
+      border-radius: 20px;
+      padding: 30px;
+      max-width: 400px;
+      margin: auto;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+    }
+    .status { margin-bottom: 20px; padding: 10px; border-radius: 10px; }
+    .status.success { background: #d4edda; color: #155724; }
+    .status.error { background: #f8d7da; color: #721c24; }
+    input, button {
+      width: 100%; padding: 10px; margin-bottom: 15px; border-radius: 8px; font-size: 16px;
+    }
+    input { border: 1px solid #ccc; }
+    button {
+      background: #007bff; color: white; border: none; font-weight: bold;
+    }
+    button:disabled {
+      background: #999;
+      cursor: not-allowed;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>📍 เช็คอินผ่าน LINE</h2>
+    <div id="status" class="status">กำลังโหลด...</div>
+    <form id="form" style="display: none;">
+      <input type="text" id="studentId" placeholder="รหัสนักศึกษา (8 หลัก)" maxlength="8" required>
+      <input type="text" id="fullName" placeholder="ชื่อ-สกุล" required>
+      <button type="submit" id="submitBtn">✅ เช็คอิน</button>
+    </form>
+  </div>
+  <script>
+    const liffId = 'YOUR_LIFF_ID'; // แทนที่ด้วย LIFF ID จริง
+    const endpoint = 'https://script.google.com/macros/s/YOUR_DEPLOYED_SCRIPT/exec';
+    const EVENT_LOCATION = { lat: 8.64545, lng: 99.89768 };
+    const RADIUS_METER = 300;
+
+    async function initApp() {
+      try {
+        await liff.init({ liffId });
+        if (!liff.isLoggedIn()) liff.login();
+
+        const profile = await liff.getProfile();
+        document.getElementById('status').textContent = `👤 ${profile.displayName} - กำลังตรวจสอบพิกัด...`;
+
+        if (!navigator.geolocation) {
+          updateStatus('❌ เบราว์เซอร์ไม่รองรับการระบุตำแหน่ง', 'error');
+          return;
+        }
+
+        navigator.geolocation.getCurrentPosition(async (pos) => {
+          const location = {
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude
+          };
+
+          const dist = calculateDistance(
+            location.lat, location.lng,
+            EVENT_LOCATION.lat, EVENT_LOCATION.lng
+          );
+
+          if (dist > RADIUS_METER) {
+            updateStatus(`❌ อยู่นอกพื้นที่ (${dist.toFixed(0)} เมตร)`, 'error');
+            document.getElementById('submitBtn').disabled = true;
+          } else {
+            updateStatus(`✅ พิกัดผ่าน (${dist.toFixed(0)} เมตร)`, 'success');
+            document.getElementById('form').style.display = 'block';
+            document.getElementById('submitBtn').disabled = false;
+
+            document.getElementById('form').addEventListener('submit', async (e) => {
+              e.preventDefault();
+              const studentId = document.getElementById('studentId').value;
+              const fullName = document.getElementById('fullName').value;
+
+              const payload = {
+                uid: profile.userId,
+                displayName: profile.displayName,
+                studentId,
+                fullName,
+                location,
+                timestamp: new Date().toISOString()
+              };
+
+              try {
+                const res = await fetch(endpoint, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(payload)
+                });
+                const result = await res.json();
+                updateStatus(result.success ? '✅ เช็คอินสำเร็จ' : '❌ ' + result.message, result.success ? 'success' : 'error');
+              } catch (err) {
+                updateStatus('❌ ไม่สามารถส่งข้อมูลได้', 'error');
+              }
+            });
+          }
+        });
+      } catch (err) {
+        console.error(err);
+        updateStatus('❌ โหลด LIFF ไม่สำเร็จ', 'error');
+      }
+    }
+
+    function updateStatus(text, type) {
+      const div = document.getElementById('status');
+      div.textContent = text;
+      div.className = 'status ' + type;
+    }
+
+    function calculateDistance(lat1, lng1, lat2, lng2) {
+      const R = 6371e3;
+      const toRad = deg => deg * Math.PI / 180;
+      const dLat = toRad(lat2 - lat1);
+      const dLng = toRad(lng2 - lng1);
+      const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng/2)**2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    window.onload = initApp;
+  </script>
+</body>
+</html>
